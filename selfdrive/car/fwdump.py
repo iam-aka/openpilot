@@ -12,6 +12,7 @@ Then in a loop, make UDS requests to transfer data with UDS_SvcTransferData unti
 Finally complete the transfer with UDS_SvcRequestTransferExit.
 """
 
+import binascii
 import struct
 import traceback
 from typing import Any
@@ -50,7 +51,7 @@ EXTENDED_DIAGNOSTIC_REQUEST = bytes([uds.SERVICE_TYPE.DIAGNOSTIC_SESSION_CONTROL
 EXTENDED_DIAGNOSTIC_RESPONSE = bytes([uds.SERVICE_TYPE.DIAGNOSTIC_SESSION_CONTROL + 0x40,
                                       uds.SESSION_TYPE.EXTENDED_DIAGNOSTIC, 0x0, 0x32, 0x1, 0xf4])
 
-
+# REQUEST_UPLOAD_REQUEST = bytes([uds.SERVICE_TYPE.REQUEST_UPLOAD, 0x0, ])
 
 init = [
   [TESTER_PRESENT_REQUEST, DEFAULT_DIAGNOSTIC_REQUEST, EXTENDED_DIAGNOSTIC_REQUEST],
@@ -59,6 +60,49 @@ init = [
 
 query = IsoTpParallelQuery(sendcan, logcan, 1, (1872, 109), init[0], init[1], debug=True)
 print(query.get_data(0.2))
+
+def request_upload(memory_address: int, memory_size: int, memory_address_bytes: int = 4, memory_size_bytes: int = 4, data_format: int = 0x00):
+  data = bytes([data_format])
+
+  if memory_address_bytes < 1 or memory_address_bytes > 4:
+    raise ValueError('invalid memory_address_bytes: {}'.format(memory_address_bytes))
+  if memory_size_bytes < 1 or memory_size_bytes > 4:
+    raise ValueError('invalid memory_size_bytes: {}'.format(memory_size_bytes))
+  data += bytes([memory_size_bytes << 4 | memory_address_bytes])
+
+  if memory_address >= 1 << (memory_address_bytes * 8):
+    raise ValueError('invalid memory_address: {}'.format(memory_address))
+  data += struct.pack('!I', memory_address)[4 - memory_address_bytes:]
+  if memory_size >= 1 << (memory_size_bytes * 8):
+    raise ValueError('invalid memory_size: {}'.format(memory_size))
+  data += struct.pack('!I', memory_size)[4 - memory_size_bytes:]
+
+  requp = [
+    bytes([uds.SERVICE_TYPE.REQUEST_UPLOAD]) + data,
+    bytes([uds.SERVICE_TYPE.REQUEST_UPLOAD + 0x40])
+  ]
+  q = IsoTpParallelQuery(sendcan, logcan, 1, (1872, 109), requp[0], requp[1], debug=True)
+  resp = query.get_data()
+  print(resp)
+  for k, v in resp.items():
+    print(binascii.hexlify(v))
+  return resp
+
+request_upload(0x0, 0xFFFF)
+#   # max_num_bytes_len = resp[0] >> 4 if len(resp) > 0 else 0
+#   # if max_num_bytes_len >= 1 and max_num_bytes_len <= 4:
+#   #   max_num_bytes = struct.unpack('!I', (b"\x00" * (4 - max_num_bytes_len)) + resp[1:max_num_bytes_len + 1])[0]
+#   # else:
+#   #   raise ValueError('invalid max_num_bytes_len: {}'.format(max_num_bytes_len))
+
+#   # return max_num_bytes  # max number of bytes per transfer data request
+
+# requp = [
+#   []
+# ]
+# query = IsoTpParallelQuery(sendcan, logcan, 1, (1872, 109), init[0], init[1], debug=True)
+# print(query.get_data(0.2))
+
 # uds.SERVICE_TYPE.REQUEST_UPLOAD
 # uds.SERVICE_TYPE.TRANSFER_DATA
 # uds.SERVICE_TYPE.REQUEST_TRANSFER_EXIT
